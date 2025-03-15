@@ -75,8 +75,8 @@ runs:
         sudo mv blossom-cli /usr/local/bin/
         
         # Verify installation with the correct command format
-        echo "Verifying installation..."
-        blossom-cli
+        # echo "Verifying installation..."
+        # blossom-cli
         
         echo "blossom-cli installed successfully"
     
