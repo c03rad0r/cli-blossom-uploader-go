@@ -38,7 +38,7 @@ runs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.20'
+        go-version: '1.22'
     
     - name: Install blossom-cli
       id: install
@@ -51,6 +51,9 @@ runs:
         if [ "${{ inputs.cliVersion }}" != "latest" ]; then
           git checkout ${{ inputs.cliVersion }}
         fi
+        
+        sed -i 's/go 1.23.1/go 1.22/' go.mod
+        sed -i '/toolchain/d' go.mod
         
         go mod download
         go build -o blossom-cli .
