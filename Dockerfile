@@ -1,11 +1,12 @@
-FROM python:3.10-slim
+FROM node:18-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies
+COPY package.json .
+RUN npm install
 
-COPY main.py .
-RUN chmod +x main.py
+# Copy source code
+COPY index.js .
 
-ENTRYPOINT ["python", "/app/main.py"] 
+ENTRYPOINT ["node", "/app/index.js"] 

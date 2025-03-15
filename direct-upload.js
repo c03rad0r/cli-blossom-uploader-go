@@ -1,26 +1,37 @@
+#!/usr/bin/env node
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { execSync } = require('child_process');
+
+// Install dependencies if needed
+try {
+  require('nostr-tools');
+  require('form-data');
+  require('node-fetch');
+} catch (error) {
+  console.log('Installing dependencies...');
+  execSync('npm install nostr-tools form-data node-fetch@2');
+}
+
 const FormData = require('form-data');
 const fetch = require('node-fetch');
 const { getEventHash, signEvent, nip19 } = require('nostr-tools');
 
-// Get inputs from environment variables
-const host = process.env.INPUT_HOST || 'https://blossom.swissdash.site';
-const filePath = process.env.INPUT_FILEPATH;
-const nsecKey = process.env.INPUT_NOSTRPRIVATEKEY;
-const contentType = process.env.INPUT_CONTENTTYPE || '';
-const uniqueId = process.env.INPUT_UNIQUEID || Date.now().toString();
-const retries = parseInt(process.env.INPUT_RETRIES || '3');
+// Get inputs from environment or command line
+const filePath = process.argv[2] || process.env.FILE_PATH;
+const nsecKey = process.env.NSEC_KEY;
+const host = process.env.HOST || 'https://blossom.swissdash.site';
+const uniqueId = process.env.UNIQUE_ID || Date.now().toString();
+const contentType = process.env.CONTENT_TYPE || '';
+const retries = parseInt(process.env.RETRIES || '3');
 
-// Set GitHub Actions output
+// Set GitHub Actions output if running in GitHub Actions
 function setOutput(name, value) {
   const githubOutput = process.env.GITHUB_OUTPUT;
   if (githubOutput) {
     fs.appendFileSync(githubOutput, `${name}=${value}\n`);
   }
-  // Legacy method (deprecated but keeping for compatibility)
-  console.log(`::set-output name=${name}::${value}`);
 }
 
 // Calculate SHA256 hash of a file
@@ -78,10 +89,10 @@ function createAuthEvent(nsecKey, uploadUrl, uniqueId) {
 async function uploadToBlossom(filePath, nsecKey, host, uniqueId, contentType, maxRetries) {
   // Validate inputs
   if (!filePath) {
-    throw new Error('filePath is required');
+    throw new Error('File path is required');
   }
   if (!nsecKey) {
-    throw new Error('nostrPrivateKey is required');
+    throw new Error('Nostr private key is required');
   }
   if (!fs.existsSync(filePath)) {
     throw new Error(`File not found: ${filePath}`);
@@ -178,6 +189,17 @@ async function uploadToBlossom(filePath, nsecKey, host, uniqueId, contentType, m
 // Main function
 async function main() {
   try {
+    if (!filePath || !nsecKey) {
+      console.log('Usage: node direct-upload.js <file_path>');
+      console.log('Environment variables:');
+      console.log('  NSEC_KEY: Nostr private key (required)');
+      console.log('  HOST: Blossom host URL (default: https://blossom.swissdash.site)');
+      console.log('  UNIQUE_ID: Unique identifier (default: timestamp)');
+      console.log('  CONTENT_TYPE: Content type of the file (optional)');
+      console.log('  RETRIES: Number of upload retries (default: 3)');
+      process.exit(1);
+    }
+    
     // Upload file
     const result = await uploadToBlossom(
       filePath,
@@ -188,22 +210,35 @@ async function main() {
       retries
     );
     
-    // Set outputs
+    // Output results
     if (result.success) {
+      console.log(`URL: ${result.url}`);
+      console.log(`Hash: ${result.hash}`);
+      console.log(`Size: ${result.size}`);
+      
+      // Set GitHub outputs if running in GitHub Actions
       setOutput('url', result.url);
       setOutput('hash', result.hash);
       setOutput('size', result.size.toString());
       setOutput('success', 'true');
+      
       process.exit(0);
     } else {
+      console.error(`Error: ${result.error}`);
+      
+      // Set GitHub outputs if running in GitHub Actions
       setOutput('success', 'false');
       setOutput('error', result.error);
+      
       process.exit(1);
     }
   } catch (error) {
     console.error(`Error: ${error.message}`);
+    
+    // Set GitHub outputs if running in GitHub Actions
     setOutput('success', 'false');
     setOutput('error', error.message);
+    
     process.exit(1);
   }
 }
@@ -212,4 +247,4 @@ async function main() {
 main().catch(error => {
   console.error(`Unhandled error: ${error.message}`);
   process.exit(1);
-});
+}); 
