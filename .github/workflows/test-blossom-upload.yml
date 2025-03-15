@@ -3,10 +3,6 @@ name: Test Blossom Upload
 on:
   workflow_dispatch:  # Manual trigger
   push:
-    branches:
-      - '*'
-    paths:
-      - 'python-blossom-uploader/**'  # Run when the uploader is modified
 
 jobs:
   test-upload:
