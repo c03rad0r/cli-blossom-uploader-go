@@ -20,7 +20,7 @@ jobs:
         id: upload
         uses: ./
         with:
-          host: "https://blossom.swishdash.site"
+          host: "https://blossom.swissdash.site"
           filePath: "test-file.bin"
           nostrPrivateKey: ${{ secrets.NSEC }}
 
