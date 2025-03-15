@@ -23,7 +23,7 @@ jobs:
         with:
           host: "https://blossom.swishdash.site"
           filePath: "test-file.bin"
-          nostrPrivateKey: ${{ secrets.NSEC }}
+          nostrPrivateKey: ${{ secrets.NSECBECH }}
           uniqueId: "${{ github.run_id }}-${{ github.run_number }}"
           contentType: "application/octet-stream"
           retries: "5"
