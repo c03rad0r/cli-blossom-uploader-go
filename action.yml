@@ -52,17 +52,31 @@ runs:
           git checkout ${{ inputs.cliVersion }}
         fi
         
+        # Modify go.mod to be compatible with our Go version
         sed -i 's/go 1.23.1/go 1.22/' go.mod
         sed -i '/toolchain/d' go.mod
         
         go mod download
         go build -o blossom-cli .
+
+        # Try to build with modified dependencies
+        echo "Building blossom-cli..."
+        go mod tidy -compat=1.22
         
+        # Try to downgrade dependencies if needed
+        if ! go build -o blossom-cli .; then
+          echo "Trying with downgraded dependencies..."
+          go get github.com/nbd-wtf/go-nostr@v0.24.2
+          go mod tidy -compat=1.22
+          go build -o blossom-cli .
+        fi
+
         # Move to a location in PATH
         sudo mv blossom-cli /usr/local/bin/
         
-        # Verify installation
-        blossom-cli --help
+        # Verify installation with the correct command format
+        echo "Verifying installation..."
+        blossom-cli
         
         echo "blossom-cli installed successfully"
     
@@ -81,7 +95,7 @@ runs:
         # Create a temporary file for the private key
         echo "${{ inputs.nostrPrivateKey }}" > /tmp/nsec.key
         
-        # Run the upload command
+        # Run the upload command with the correct format
         echo "Uploading file to Blossom..."
         RESULT=$(blossom-cli upload -server "${{ inputs.host }}" -file "${{ inputs.filePath }}" -privkey "$(cat /tmp/nsec.key)" 2>&1)
         UPLOAD_EXIT_CODE=$?
