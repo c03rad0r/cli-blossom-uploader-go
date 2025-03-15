@@ -11,7 +11,7 @@ inputs:
     description: 'Path to the file to upload'
     required: true
   nostrPrivateKey:
-    description: 'Nostr private key (nsec format)'
+    description: 'Nostr private key (hex or nsec format)'
     required: true
   cliVersion:
     description: 'Version of blossom-cli to use'
@@ -39,6 +39,16 @@ runs:
       uses: actions/setup-go@v4
       with:
         go-version: '1.22'
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+    
+    - name: Install Node.js dependencies
+      shell: bash
+      run: |
+        npm install -g nostr-tools
     
     - name: Install blossom-cli
       id: install
@@ -74,11 +84,43 @@ runs:
         # Move to a location in PATH
         sudo mv blossom-cli /usr/local/bin/
         
-        # Verify installation with the correct command format
-        # echo "Verifying installation..."
-        # blossom-cli
-        
         echo "blossom-cli installed successfully"
+    
+    - name: Create key conversion script
+      shell: bash
+      run: |
+        cat > /tmp/convert-key.js << 'EOF'
+        const { nip19 } = require('nostr-tools');
+        
+        // Get the key from command line argument
+        const key = process.argv[2];
+        
+        // Check if already in nsec format
+        if (key.startsWith('nsec')) {
+          console.log(key);
+          process.exit(0);
+        }
+        
+        // Try to convert from hex to nsec
+        try {
+          // Remove any 0x prefix if present
+          const hexKey = key.startsWith('0x') ? key.substring(2) : key;
+          
+          // Check if it's a valid hex string
+          if (!/^[0-9a-fA-F]{64}$/.test(hexKey)) {
+            throw new Error('Invalid hex format');
+          }
+          
+          // Convert to nsec
+          const nsec = nip19.nsecEncode(hexKey);
+          console.log(nsec);
+        } catch (error) {
+          console.error('Error converting key:', error.message);
+          process.exit(1);
+        }
+        EOF
+        
+        chmod +x /tmp/convert-key.js
     
     - name: Calculate file hash
       id: hash
@@ -92,13 +134,27 @@ runs:
       id: upload
       shell: bash
       run: |
+        # Convert key to nsec format if needed
+        echo "Converting key to nsec format if needed..."
+        NSEC_KEY=$(node /tmp/convert-key.js "${{ inputs.nostrPrivateKey }}")
+        
+        if [ $? -ne 0 ]; then
+          echo "Error converting key. Using original key format."
+          NSEC_KEY="${{ inputs.nostrPrivateKey }}"
+        fi
+        
         # Create a temporary file for the private key
-        echo "${{ inputs.nostrPrivateKey }}" > /tmp/nsec.key
+        echo "$NSEC_KEY" > /tmp/nsec.key
         
         # Run the upload command with the correct format
         echo "Uploading file to Blossom..."
+        echo "Command: blossom-cli upload -server \"${{ inputs.host }}\" -file \"${{ inputs.filePath }}\" -privkey \"$(cat /tmp/nsec.key)\""
+        
+        # Run with verbose output for debugging
+        set -x
         RESULT=$(blossom-cli upload -server "${{ inputs.host }}" -file "${{ inputs.filePath }}" -privkey "$(cat /tmp/nsec.key)" 2>&1)
         UPLOAD_EXIT_CODE=$?
+        set +x
         
         # Remove the private key file
         rm /tmp/nsec.key
