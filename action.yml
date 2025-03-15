@@ -1,0 +1,43 @@
+name: 'Blossom Uploader'
+description: 'Upload files to Blossom with Nostr authentication'
+author: 'OpenTollGate'
+
+inputs:
+  host:
+    description: 'Blossom host URL'
+    required: true
+    default: 'https://blossom.swissdash.site'
+  filePath:
+    description: 'Path to the file to upload'
+    required: true
+  nostrPrivateKey:
+    description: 'Nostr private key (nsec or hex format)'
+    required: true
+  contentType:
+    description: 'Content type of the file'
+    required: false
+    default: ''
+  uniqueId:
+    description: 'Unique identifier to prevent auth reuse'
+    required: false
+    default: ''
+  retries:
+    description: 'Number of upload retries'
+    required: false
+    default: '3'
+
+outputs:
+  url:
+    description: 'URL of the uploaded file'
+  hash:
+    description: 'Hash of the uploaded file'
+  size:
+    description: 'Size of the uploaded file in bytes'
+  success:
+    description: 'Whether the upload was successful (true/false)'
+  error:
+    description: 'Error message if upload failed'
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
