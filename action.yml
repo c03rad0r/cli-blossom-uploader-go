@@ -1,30 +1,22 @@
-name: 'Blossom Uploader'
-description: 'Upload files to Blossom with Nostr authentication'
+name: 'Blossom CLI Uploader'
+description: 'Upload files to Blossom using the blossom-cli tool'
 author: 'OpenTollGate'
 
 inputs:
   host:
     description: 'Blossom host URL'
     required: true
-    default: 'https://blossom.swishdash.site'
+    default: 'https://blossom.swissdash.site'
   filePath:
     description: 'Path to the file to upload'
     required: true
   nostrPrivateKey:
-    description: 'Nostr private key (nsec or hex format)'
+    description: 'Nostr private key (nsec format)'
     required: true
-  contentType:
-    description: 'Content type of the file'
+  cliVersion:
+    description: 'Version of blossom-cli to use'
     required: false
-    default: ''
-  uniqueId:
-    description: 'Unique identifier to prevent auth reuse'
-    required: false
-    default: ''
-  retries:
-    description: 'Number of upload retries'
-    required: false
-    default: '3'
+    default: 'latest'
 
 outputs:
   url:
@@ -33,9 +25,6 @@ outputs:
   hash:
     description: 'Hash of the uploaded file'
     value: ${{ steps.upload.outputs.hash }}
-  size:
-    description: 'Size of the uploaded file in bytes'
-    value: ${{ steps.upload.outputs.size }}
   success:
     description: 'Whether the upload was successful (true/false)'
     value: ${{ steps.upload.outputs.success }}
@@ -46,24 +35,80 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Set up Node.js
-      uses: actions/setup-node@v3
+    - name: Set up Go
+      uses: actions/setup-go@v4
       with:
-        node-version: '18'
-      
-    - name: Install dependencies
+        go-version: '1.20'
+    
+    - name: Install blossom-cli
+      id: install
       shell: bash
-      run: npm install nostr-tools@1.17.0 form-data node-fetch@2
-      
-    - name: Upload to Blossom
+      run: |
+        echo "Installing blossom-cli..."
+        git clone https://github.com/girino/blossom-cli.git /tmp/blossom-cli
+        cd /tmp/blossom-cli
+        
+        if [ "${{ inputs.cliVersion }}" != "latest" ]; then
+          git checkout ${{ inputs.cliVersion }}
+        fi
+        
+        go mod download
+        go build -o blossom-cli .
+        
+        # Move to a location in PATH
+        sudo mv blossom-cli /usr/local/bin/
+        
+        # Verify installation
+        blossom-cli --help
+        
+        echo "blossom-cli installed successfully"
+    
+    - name: Calculate file hash
+      id: hash
+      shell: bash
+      run: |
+        FILE_HASH=$(sha256sum "${{ inputs.filePath }}" | cut -d' ' -f1)
+        echo "FILE_HASH=$FILE_HASH" >> $GITHUB_ENV
+        echo "Original file hash: $FILE_HASH"
+    
+    - name: Upload file to Blossom
       id: upload
       shell: bash
-      run: node ${{ github.action_path }}/upload.js
-      env:
-        FILE_PATH: ${{ inputs.filePath }}
-        NSEC_KEY: ${{ inputs.nostrPrivateKey }}
-        HOST: ${{ inputs.host }}
-        UNIQUE_ID: ${{ inputs.uniqueId }}
-        CONTENT_TYPE: ${{ inputs.contentType }}
-        RETRIES: ${{ inputs.retries }}
-        GITHUB_OUTPUT: $GITHUB_OUTPUT
+      run: |
+        # Create a temporary file for the private key
+        echo "${{ inputs.nostrPrivateKey }}" > /tmp/nsec.key
+        
+        # Run the upload command
+        echo "Uploading file to Blossom..."
+        RESULT=$(blossom-cli upload -server "${{ inputs.host }}" -file "${{ inputs.filePath }}" -privkey "$(cat /tmp/nsec.key)" 2>&1)
+        UPLOAD_EXIT_CODE=$?
+        
+        # Remove the private key file
+        rm /tmp/nsec.key
+        
+        echo "Upload result: $RESULT"
+        
+        if [ $UPLOAD_EXIT_CODE -eq 0 ]; then
+          # Extract URL from result
+          URL=$(echo "$RESULT" | grep -oP 'URL: \K.*')
+          
+          if [ -n "$URL" ]; then
+            echo "url=$URL" >> $GITHUB_OUTPUT
+            echo "hash=$FILE_HASH" >> $GITHUB_OUTPUT
+            echo "success=true" >> $GITHUB_OUTPUT
+            
+            echo "Upload successful!"
+            echo "URL: $URL"
+            echo "Hash: $FILE_HASH"
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+            echo "error=Could not extract URL from result" >> $GITHUB_OUTPUT
+            echo "Failed to extract URL from result"
+            exit 1
+          fi
+        else
+          echo "success=false" >> $GITHUB_OUTPUT
+          echo "error=$RESULT" >> $GITHUB_OUTPUT
+          echo "Upload failed with exit code $UPLOAD_EXIT_CODE"
+          exit 1
+        fi

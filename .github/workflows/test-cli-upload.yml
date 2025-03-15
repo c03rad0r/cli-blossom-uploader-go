@@ -1,0 +1,73 @@
+name: Test Blossom CLI Upload
+
+on:
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  test-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate test file
+        run: |
+          dd if=/dev/urandom of=test-file.bin bs=1M count=1
+          echo "ORIGINAL_HASH=$(sha256sum test-file.bin | cut -d' ' -f1)" >> $GITHUB_ENV
+          echo "FILE_SIZE=$(stat -c%s test-file.bin)" >> $GITHUB_ENV
+
+      - name: Upload to Blossom
+        id: upload
+        uses: ./
+        with:
+          host: "https://blossom.swishdash.site"
+          filePath: "test-file.bin"
+          nostrPrivateKey: ${{ secrets.NSEC }}
+
+      - name: Verify upload success
+        if: steps.upload.outputs.success == 'true'
+        run: |
+          echo "✅ Upload successful!"
+          echo "URL: ${{ steps.upload.outputs.url }}"
+          echo "Reported hash: ${{ steps.upload.outputs.hash }}"
+          echo "Original hash: ${{ env.ORIGINAL_HASH }}"
+          
+          # Compare hashes
+          if [ "${{ steps.upload.outputs.hash }}" == "${{ env.ORIGINAL_HASH }}" ]; then
+            echo "✅ Hash verification successful!"
+          else
+            echo "⚠️ Hash mismatch! File may have been modified during upload."
+            echo "Original: ${{ env.ORIGINAL_HASH }}"
+            echo "Reported: ${{ steps.upload.outputs.hash }}"
+          fi
+
+      - name: Download uploaded file
+        if: steps.upload.outputs.success == 'true'
+        run: |
+          # Download the file we just uploaded
+          curl -L "${{ steps.upload.outputs.url }}" -o downloaded-file.bin
+          
+          # Calculate hash of downloaded file
+          DOWNLOADED_HASH=$(sha256sum downloaded-file.bin | cut -d' ' -f1)
+          echo "DOWNLOADED_HASH=$DOWNLOADED_HASH" >> $GITHUB_ENV
+          
+          # Get downloaded file size
+          DOWNLOADED_SIZE=$(stat -c%s downloaded-file.bin)
+          echo "DOWNLOADED_SIZE=$DOWNLOADED_SIZE" >> $GITHUB_ENV
+          
+          echo "Downloaded file with hash: $DOWNLOADED_HASH"
+          echo "Downloaded file size: $DOWNLOADED_SIZE bytes"
+
+      - name: Verify download integrity
+        if: steps.upload.outputs.success == 'true'
+        run: |
+          # Compare original and downloaded file hashes
+          if [ "${{ env.ORIGINAL_HASH }}" == "${{ env.DOWNLOADED_HASH }}" ]; then
+            echo "✅ End-to-end verification successful!"
+            echo "The file was uploaded and downloaded without any modifications."
+          else
+            echo "❌ End-to-end verification failed!"
+            echo "Original hash: ${{ env.ORIGINAL_HASH }}"
+            echo "Downloaded hash: ${{ env.DOWNLOADED_HASH }}"
+            exit 1
+          fi 
