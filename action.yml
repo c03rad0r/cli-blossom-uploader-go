@@ -107,7 +107,7 @@ runs:
         
         # Run with verbose output for debugging
         set -x
-        RESULT=$(blossom-cli upload -server "${{ inputs.host }}" -file "${{ inputs.filePath }}" -privkey "$(cat /tmp/nsec.key)" 2>&1)
+        RESULT=$(blossom-cli upload -server "${{ inputs.host }}" -file "${{ inputs.filePath }}" -privkey "$(cat /tmp/nsec.key)" 2>&1) || true
         UPLOAD_EXIT_CODE=$?
         set +x
         
@@ -116,27 +116,32 @@ runs:
         
         echo "Upload result: $RESULT"
         
-        if [ $UPLOAD_EXIT_CODE -eq 0 ]; then
-          # Extract URL from result
-          URL=$(echo "$RESULT" | grep -oP 'URL: \K.*')
+        # Check if the result is valid JSON
+        if echo "$RESULT" | jq -e . > /dev/null 2>&1; then
+          # Extract URL from JSON
+          URL=$(echo "$RESULT" | jq -r '.url' 2>/dev/null)
+          HASH=$(echo "$RESULT" | jq -r '.sha256' 2>/dev/null)
           
-          if [ -n "$URL" ]; then
+          if [ -n "$URL" ] && [ "$URL" != "null" ]; then
             echo "url=$URL" >> $GITHUB_OUTPUT
-            echo "hash=$FILE_HASH" >> $GITHUB_OUTPUT
+            echo "hash=$HASH" >> $GITHUB_OUTPUT
             echo "success=true" >> $GITHUB_OUTPUT
             
             echo "Upload successful!"
             echo "URL: $URL"
-            echo "Hash: $FILE_HASH"
-          else
-            echo "success=false" >> $GITHUB_OUTPUT
-            echo "error=Could not extract URL from result" >> $GITHUB_OUTPUT
-            echo "Failed to extract URL from result"
-            exit 1
+            echo "Hash: $HASH"
+            exit 0
           fi
+        fi
+        
+        # If we get here, either no URL was found or there was an error
+        echo "success=false" >> $GITHUB_OUTPUT
+        echo "error=$RESULT" >> $GITHUB_OUTPUT
+        
+        if [ $UPLOAD_EXIT_CODE -eq 0 ]; then
+          echo "Upload command exited successfully but no valid URL was found in the output"
+          exit 0
         else
-          echo "success=false" >> $GITHUB_OUTPUT
-          echo "error=$RESULT" >> $GITHUB_OUTPUT
           echo "Upload failed with exit code $UPLOAD_EXIT_CODE"
           exit 1
         fi
