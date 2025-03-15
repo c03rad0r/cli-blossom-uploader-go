@@ -1,0 +1,131 @@
+name: Test Blossom Upload
+
+on:
+  workflow_dispatch:  # Manual trigger
+  push:
+    branches: [ * ]
+    paths:
+      - 'python-blossom-uploader/**'  # Run when the uploader is modified
+
+jobs:
+  test-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate 1 MB test file
+        run: |
+          # Create a 1 MB file with random data
+          dd if=/dev/urandom of=test-file.bin bs=1M count=1
+          
+          # Calculate and store SHA256 hash
+          ORIGINAL_HASH=$(sha256sum test-file.bin | cut -d' ' -f1)
+          echo "ORIGINAL_HASH=$ORIGINAL_HASH" >> $GITHUB_ENV
+          
+          # Get file size
+          FILE_SIZE=$(stat -c%s test-file.bin)
+          echo "FILE_SIZE=$FILE_SIZE" >> $GITHUB_ENV
+          
+          echo "Generated 1 MB test file with hash: $ORIGINAL_HASH"
+          echo "File size: $FILE_SIZE bytes"
+
+      - name: Upload to Blossom
+        id: blossom_upload
+        uses: ./
+        with:
+          host: "https://blossom.swissdash.site"
+          filePath: "test-file.bin"
+          nostrPrivateKey: ${{ secrets.NSEC }}
+          uniqueId: ${{ github.run_id }}-${{ github.run_number }}
+          contentType: "application/octet-stream"
+          retries: 5
+
+      - name: Verify upload success
+        run: |
+          if [ "${{ steps.blossom_upload.outputs.success }}" == "true" ]; then
+            echo "✅ Upload successful!"
+            echo "URL: ${{ steps.blossom_upload.outputs.url }}"
+            echo "Reported hash: ${{ steps.blossom_upload.outputs.hash }}"
+            echo "Original hash: ${{ env.ORIGINAL_HASH }}"
+            
+            # Compare hashes
+            if [ "${{ steps.blossom_upload.outputs.hash }}" == "${{ env.ORIGINAL_HASH }}" ]; then
+              echo "✅ Hash verification successful!"
+            else
+              echo "⚠️ Hash mismatch! File may have been modified during upload."
+              echo "Original: ${{ env.ORIGINAL_HASH }}"
+              echo "Reported: ${{ steps.blossom_upload.outputs.hash }}"
+            fi
+            
+            # Verify file size
+            if [ "${{ steps.blossom_upload.outputs.size }}" == "${{ env.FILE_SIZE }}" ]; then
+              echo "✅ Size verification successful!"
+            else
+              echo "⚠️ Size mismatch!"
+              echo "Original: ${{ env.FILE_SIZE }} bytes"
+              echo "Reported: ${{ steps.blossom_upload.outputs.size }} bytes"
+            fi
+          else
+            echo "❌ Upload failed with error: ${{ steps.blossom_upload.outputs.error }}"
+            exit 1
+          fi
+
+      - name: Download uploaded file
+        if: steps.blossom_upload.outputs.success == 'true'
+        run: |
+          # Download the file we just uploaded
+          curl -L "${{ steps.blossom_upload.outputs.url }}" -o downloaded-file.bin
+          
+          # Calculate hash of downloaded file
+          DOWNLOADED_HASH=$(sha256sum downloaded-file.bin | cut -d' ' -f1)
+          echo "DOWNLOADED_HASH=$DOWNLOADED_HASH" >> $GITHUB_ENV
+          
+          # Get downloaded file size
+          DOWNLOADED_SIZE=$(stat -c%s downloaded-file.bin)
+          echo "DOWNLOADED_SIZE=$DOWNLOADED_SIZE" >> $GITHUB_ENV
+          
+          echo "Downloaded file with hash: $DOWNLOADED_HASH"
+          echo "Downloaded file size: $DOWNLOADED_SIZE bytes"
+
+      - name: Verify download integrity
+        if: steps.blossom_upload.outputs.success == 'true'
+        run: |
+          # Compare original and downloaded file hashes
+          if [ "${{ env.ORIGINAL_HASH }}" == "${{ env.DOWNLOADED_HASH }}" ]; then
+            echo "✅ End-to-end verification successful!"
+            echo "The file was uploaded and downloaded without any modifications."
+          else
+            echo "❌ End-to-end verification failed!"
+            echo "Original hash: ${{ env.ORIGINAL_HASH }}"
+            echo "Downloaded hash: ${{ env.DOWNLOADED_HASH }}"
+            
+            # Compare file contents for debugging
+            echo "First 100 bytes of original file:"
+            hexdump -C -n 100 test-file.bin
+            
+            echo "First 100 bytes of downloaded file:"
+            hexdump -C -n 100 downloaded-file.bin
+            
+            exit 1
+          fi
+          
+          # Compare file sizes
+          if [ "${{ env.FILE_SIZE }}" == "${{ env.DOWNLOADED_SIZE }}" ]; then
+            echo "✅ File size verification successful!"
+          else
+            echo "❌ File size verification failed!"
+            echo "Original size: ${{ env.FILE_SIZE }} bytes"
+            echo "Downloaded size: ${{ env.DOWNLOADED_SIZE }} bytes"
+            exit 1
+          fi
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-files
+          path: |
+            test-file.bin
+            downloaded-file.bin
+          retention-days: 1 
