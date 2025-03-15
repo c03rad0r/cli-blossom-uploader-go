@@ -32,7 +32,7 @@ A GitHub Action for uploading files to Blossom with Nostr authentication using t
 ```yaml
 - name: Upload to Blossom
   id: blossom_upload
-  uses: OpenTollGate/python-blossom-uploader@main
+  uses: c03rad0r/cli-blossom-uploader-go@main
   with:
     host: "https://blossom.swissdash.site"
     filePath: "path/to/file.zip"
