@@ -44,6 +44,11 @@ runs:
       id: install
       shell: bash
       run: |
+        if command -v blossom-cli &> /dev/null; then
+          echo "blossom-cli is already installed. Skipping installation."
+          exit 0
+        fi
+        
         echo "Installing blossom-cli..."
         git clone https://github.com/girino/blossom-cli.git /tmp/blossom-cli
         cd /tmp/blossom-cli
