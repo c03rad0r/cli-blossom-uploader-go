@@ -17,6 +17,10 @@ inputs:
     description: 'Version of blossom-cli to use'
     required: false
     default: 'latest'
+  desiredExtension:
+    description: 'Desired extension for the uploaded file'
+    required: false
+    default: 'bin'
 
 outputs:
   url:
@@ -124,16 +128,25 @@ runs:
         # Check if the result is valid JSON
         if echo "$RESULT" | jq -e . > /dev/null 2>&1; then
           # Extract URL from JSON
-          URL=$(echo "$RESULT" | jq -r '.url' 2>/dev/null)
+          ORIGINAL_URL=$(echo "$RESULT" | jq -r '.url' 2>/dev/null)
           HASH=$(echo "$RESULT" | jq -r '.sha256' 2>/dev/null)
           
-          if [ -n "$URL" ] && [ "$URL" != "null" ]; then
-            echo "url=$URL" >> $GITHUB_OUTPUT
+          if [ -n "$ORIGINAL_URL" ] && [ "$ORIGINAL_URL" != "null" ]; then
+            # Process the URL extension if desired
+            if [ "${{ inputs.desiredExtension }}" != "bin" ]; then
+              # Replace .bin with the desired extension
+              PROCESSED_URL="${ORIGINAL_URL/.bin/.${{ inputs.desiredExtension }}}"
+              echo "Original URL: $ORIGINAL_URL"
+              echo "Processed URL with .${{ inputs.desiredExtension }} extension: $PROCESSED_URL"
+              echo "url=$PROCESSED_URL" >> $GITHUB_OUTPUT
+            else
+              echo "url=$ORIGINAL_URL" >> $GITHUB_OUTPUT
+            fi
+            
             echo "hash=$HASH" >> $GITHUB_OUTPUT
             echo "success=true" >> $GITHUB_OUTPUT
             
             echo "Upload successful!"
-            echo "URL: $URL"
             echo "Hash: $HASH"
             exit 0
           fi
